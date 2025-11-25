@@ -8,7 +8,7 @@ REM ----------------------------------------------------------
 set "AWS_ACCESS_KEY_ID=REPLACE_WITH_YOUR_ACCESS_KEY_ID"
 set "AWS_SECRET_ACCESS_KEY=REPLACE_WITH_YOUR_SECRET_ACCESS_KEY"
 set "AWS_DEFAULT_REGION=us-east-1"
-set "SEMANTIC_SCHOLAR_API_KEY=REPLACE_WITH_YOUR_SS_API_KEY"
+set "SEMANTIC_SCHOLAR_API_KEY="
 
 echo.
 echo === Cloud Research Workspace :: Backend ===
