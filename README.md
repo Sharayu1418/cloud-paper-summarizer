@@ -74,7 +74,7 @@ npm run dev
 ## Key Endpoints
 
 | Method | Path | 
-| --- | --- | --- |
+| --- | --- |
 | `POST /upload` | Upload PDF → S3 + DynamoDB |
 | `GET /search` | Unified search (Semantic Scholar, arXiv, library) |
 | `GET /library` | List user’s uploaded papers |
