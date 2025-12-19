@@ -54,14 +54,7 @@ If you see "No methodology flowchart available":
    - Upload a new paper OR
    - Trigger reprocessing via SQS (if you have that capability)
 
-## 3. Features Implemented
-
-✅ **Cognito Authentication** - Login/Signup with Google OAuth and email/password
-✅ **TTS Pause/Resume** - Listen button now pauses/resumes audio
-✅ **Flowchart Visualization** - Methodology flowchart with TTS on nodes
-✅ **Accordion Layout** - Papers expand to show flowcharts in session page
-
-## 4. Running the Frontend
+## 3. Running the Frontend
 
 ```bash
 cd frontend-1
