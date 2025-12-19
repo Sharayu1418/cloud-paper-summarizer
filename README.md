@@ -1,6 +1,8 @@
 # Research Paper RAG System
 
 A serverless, AI-powered research paper assistant that allows users to upload academic papers, create study sessions, and have intelligent conversations with their documents using Retrieval-Augmented Generation (RAG).
+Our App Link: https://main.d30knig06eps89.amplifyapp.com/
+Youtube Link: https://youtu.be/GeS0Z_cRaHQ
 
 ## Table of Contents
 
