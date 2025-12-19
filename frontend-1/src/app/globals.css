@@ -1,0 +1,286 @@
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+/* ============================================
+   DESIGN SYSTEM - Dark Academia / Editorial
+   ============================================ */
+
+:root {
+  /* Primary Palette - Deep, scholarly tones */
+  --color-ink: #1a1a1a;
+  --color-charcoal: #2d2d2d;
+  --color-slate: #4a4a4a;
+  --color-stone: #6b6b6b;
+  
+  /* Warm Neutrals */
+  --color-ivory: #faf8f5;
+  --color-cream: #f5f2ed;
+  --color-parchment: #ebe6de;
+  --color-sand: #d9d2c7;
+  
+  /* Accent Colors */
+  --color-forest: #2d4a3e;
+  --color-forest-light: #3d5f50;
+  --color-amber: #c4883a;
+  --color-amber-light: #d4a35a;
+  --color-burgundy: #6b3a3a;
+  --color-navy: #2a3a4a;
+  
+  /* Semantic Colors */
+  --color-success: #3d6b4f;
+  --color-warning: #b8860b;
+  --color-error: #8b3a3a;
+  --color-info: #3a5a7b;
+  
+  /* Typography */
+  --font-serif: 'Libre Baskerville', Georgia, serif;
+  --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  /* Spacing Scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.12);
+  
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--color-ink);
+  background-color: var(--color-ivory);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   TYPOGRAPHY
+   ============================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-ink);
+}
+
+h1 {
+  font-size: 2.5rem;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.875rem;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.5rem;
+}
+
+h4 {
+  font-size: 1.25rem;
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+a {
+  color: var(--color-forest);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-forest-light);
+}
+
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-cream);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sand);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-stone);
+}
+
+/* ============================================
+   FOCUS STATES (Accessibility)
+   ============================================ */
+
+:focus-visible {
+  outline: 2px solid var(--color-forest);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   SELECTION
+   ============================================ */
+
+::selection {
+  background-color: var(--color-forest);
+  color: var(--color-ivory);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+/* Subtle hint text for guidance */
+.hint-text {
+  font-size: 0.875rem;
+  color: var(--color-stone);
+  font-style: italic;
+}
+
+/* Progress indicator dot */
+.progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-sand);
+  transition: all var(--transition-base);
+}
+
+.progress-dot.active {
+  background-color: var(--color-forest);
+  transform: scale(1.25);
+}
+
+.progress-dot.completed {
+  background-color: var(--color-success);
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-cream) 25%,
+    var(--color-parchment) 50%,
+    var(--color-cream) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Stagger children animations */
+.stagger-children > * {
+  opacity: 0;
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
+
+/* Pulse animation for CTAs */
+@keyframes subtle-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(45, 74, 62, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(45, 74, 62, 0);
+  }
+}
+
+.pulse-cta {
+  animation: subtle-pulse 2s infinite;
+}

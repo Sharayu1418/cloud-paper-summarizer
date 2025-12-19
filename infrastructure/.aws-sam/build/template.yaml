@@ -1,0 +1,1006 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Research Paper RAG System - Serverless infrastructure for paper summarization
+  and Q&A
+
+  '
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+    - dev
+    - staging
+    - prod
+    Description: Deployment environment
+  ExistingDLQArn:
+    Type: String
+    Description: ARN of existing Dead Letter Queue
+    Default: ''
+  OpenSearchEndpoint:
+    Type: String
+    Description: OpenSearch Serverless endpoint URL
+    Default: ''
+  OpenSearchCrossAccountRole:
+    Type: String
+    Description: ARN of cross-account role for OpenSearch access (if applicable)
+    Default: ''
+  PaperUploadRoleArn:
+    Type: String
+    Description: ARN of existing paper-upload-role IAM role
+  PaperProcessorRoleArn:
+    Type: String
+    Description: ARN of existing paper-processor-role IAM role
+  ChatHandlerRoleArn:
+    Type: String
+    Description: ARN of existing chat-handler-role IAM role
+  SessionManagerRoleArn:
+    Type: String
+    Description: ARN of existing session-manager-role IAM role
+  SearchHandlerRoleArn:
+    Type: String
+    Description: ARN of existing search-handler-role IAM role
+  TTSHandlerRoleArn:
+    Type: String
+    Description: ARN of existing tts-handler-role IAM role (for Polly)
+    Default: ''
+  SharedLayerArn:
+    Type: String
+    Description: ARN of the shared Lambda layer with dependencies
+  OpenAIApiKey:
+    Type: String
+    Description: OpenAI API Key (optional - for fallback embeddings)
+    Default: ''
+    NoEcho: true
+  GeminiApiKey:
+    Type: String
+    Description: Google Gemini API Key (optional - for fallback LLM)
+    Default: ''
+    NoEcho: true
+  SemanticScholarApiKey:
+    Type: String
+    Description: Semantic Scholar API Key (optional)
+    Default: ''
+    NoEcho: true
+  GoogleClientId:
+    Type: String
+    Description: Google OAuth Client ID for social login
+    Default: ''
+    NoEcho: true
+  GoogleClientSecret:
+    Type: String
+    Description: Google OAuth Client Secret for social login
+    Default: ''
+    NoEcho: true
+  FrontendUrl:
+    Type: String
+    Description: Frontend URL for Cognito OAuth callbacks
+    Default: http://localhost:3000
+  PineconeApiKey:
+    Type: String
+    Description: Pinecone API Key for vector database
+    Default: ''
+    NoEcho: true
+  PineconeIndexName:
+    Type: String
+    Description: Pinecone index name
+    Default: research-papers
+  PineconeHost:
+    Type: String
+    Description: Pinecone host URL
+    Default: ''
+Conditions:
+  HasExistingDLQ:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: ExistingDLQArn
+      - ''
+  CreateNewDLQ:
+    Fn::Equals:
+    - Ref: ExistingDLQArn
+    - ''
+  HasGoogleOAuth:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: GoogleClientId
+      - ''
+  IsProd:
+    Fn::Equals:
+    - Ref: Environment
+    - prod
+  HasTTSRole:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: TTSHandlerRoleArn
+      - ''
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        AWS_REGION_NAME:
+          Ref: AWS::Region
+        ENVIRONMENT:
+          Ref: Environment
+        S3_BUCKET_NAME:
+          Ref: PapersBucket
+        PAPERS_TABLE:
+          Ref: PapersMetadataTable
+        SESSIONS_TABLE:
+          Ref: StudySessionsTable
+        CHAT_HISTORY_TABLE:
+          Ref: ChatHistoryTable
+        PROCESSING_QUEUE_URL:
+          Ref: PaperProcessingQueue
+        OPENSEARCH_ENDPOINT:
+          Ref: OpenSearchEndpoint
+        OPENSEARCH_INDEX:
+          Fn::Sub: papers-vectors-${Environment}
+        OPENSEARCH_CROSS_ACCOUNT_ROLE:
+          Ref: OpenSearchCrossAccountRole
+        PINECONE_API_KEY:
+          Ref: PineconeApiKey
+        PINECONE_INDEX_NAME:
+          Ref: PineconeIndexName
+        PINECONE_HOST:
+          Ref: PineconeHost
+        VECTOR_DB_PROVIDER: pinecone
+        EMBEDDING_PROVIDER: bedrock
+        LLM_PROVIDER: bedrock
+        OPENAI_API_KEY:
+          Ref: OpenAIApiKey
+        GEMINI_API_KEY:
+          Ref: GeminiApiKey
+        SEMANTIC_SCHOLAR_API_KEY:
+          Ref: SemanticScholarApiKey
+Resources:
+  PapersBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName:
+        Fn::Sub: research-papers-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+        - Id: MoveUploadsToIntelligentTiering
+          Status: Enabled
+          Prefix: uploads/
+          Transitions:
+          - StorageClass: INTELLIGENT_TIERING
+            TransitionInDays: 30
+        - Id: CleanupIncompleteUploads
+          Status: Enabled
+          AbortIncompleteMultipartUpload:
+            DaysAfterInitiation: 7
+        - Id: ArchiveOldChunks
+          Status: Enabled
+          Prefix: chunks/
+          Transitions:
+          - StorageClass: GLACIER
+            TransitionInDays: 90
+        - Id: DeleteOldTempFiles
+          Status: Enabled
+          Prefix: temp/
+          ExpirationInDays: 7
+      CorsConfiguration:
+        CorsRules:
+        - AllowedHeaders:
+          - '*'
+          AllowedMethods:
+          - GET
+          - PUT
+          - POST
+          - HEAD
+          AllowedOrigins:
+          - '*'
+          MaxAge: 3000
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  PapersBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: PapersBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: EnforceHTTPS
+          Effect: Deny
+          Principal: '*'
+          Action: s3:*
+          Resource:
+          - Fn::GetAtt:
+            - PapersBucket
+            - Arn
+          - Fn::Sub: ${PapersBucket.Arn}/*
+          Condition:
+            Bool:
+              aws:SecureTransport: false
+  PaperProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Condition: CreateNewDLQ
+    Properties:
+      QueueName:
+        Fn::Sub: paper-processing-dlq-${Environment}
+      MessageRetentionPeriod: 1209600
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  PaperProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: paper-processing-queue-${Environment}
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::If:
+          - HasExistingDLQ
+          - Ref: ExistingDLQArn
+          - Fn::GetAtt:
+            - PaperProcessingDLQ
+            - Arn
+        maxReceiveCount: 3
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  PapersMetadataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:
+        Fn::Sub: papers-metadata-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: user_id
+        AttributeType: S
+      - AttributeName: document_id
+        AttributeType: S
+      - AttributeName: status
+        AttributeType: S
+      - AttributeName: upload_date
+        AttributeType: S
+      KeySchema:
+      - AttributeName: user_id
+        KeyType: HASH
+      - AttributeName: document_id
+        KeyType: RANGE
+      GlobalSecondaryIndexes:
+      - IndexName: status-index
+        KeySchema:
+        - AttributeName: status
+          KeyType: HASH
+        - AttributeName: upload_date
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      - IndexName: user-upload-date-index
+        KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: upload_date
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled:
+          Fn::If:
+          - IsProd
+          - true
+          - false
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  StudySessionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:
+        Fn::Sub: study-sessions-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: user_id
+        AttributeType: S
+      - AttributeName: session_id
+        AttributeType: S
+      - AttributeName: last_active
+        AttributeType: S
+      KeySchema:
+      - AttributeName: user_id
+        KeyType: HASH
+      - AttributeName: session_id
+        KeyType: RANGE
+      GlobalSecondaryIndexes:
+      - IndexName: user-last-active-index
+        KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: last_active
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled:
+          Fn::If:
+          - IsProd
+          - true
+          - false
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  ChatHistoryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:
+        Fn::Sub: chat-history-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: session_id
+        AttributeType: S
+      - AttributeName: timestamp
+        AttributeType: S
+      KeySchema:
+      - AttributeName: session_id
+        KeyType: HASH
+      - AttributeName: timestamp
+        KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled:
+          Fn::If:
+          - IsProd
+          - true
+          - false
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+      - Key: Project
+        Value: ResearchPaperRAG
+      - Key: Environment
+        Value:
+          Ref: Environment
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName:
+        Fn::Sub: research-paper-rag-users-${Environment}
+      AutoVerifiedAttributes:
+      - email
+      UsernameAttributes:
+      - email
+      MfaConfiguration: 'OFF'
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+      - Name: email
+        AttributeDataType: String
+        Required: true
+        Mutable: true
+      - Name: name
+        AttributeDataType: String
+        Required: false
+        Mutable: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+        - Name: verified_email
+          Priority: 1
+      UserPoolTags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain:
+        Fn::Sub: research-paper-rag-${Environment}-${AWS::AccountId}
+      UserPoolId:
+        Ref: UserPool
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasGoogleOAuth
+    Properties:
+      UserPoolId:
+        Ref: UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id:
+          Ref: GoogleClientId
+        client_secret:
+          Ref: GoogleClientSecret
+        authorize_scopes: profile email openid
+      AttributeMapping:
+        email: email
+        name: name
+        username: sub
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn:
+    - UserPoolDomain
+    Properties:
+      ClientName:
+        Fn::Sub: research-paper-rag-client-${Environment}
+      UserPoolId:
+        Ref: UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_USER_SRP_AUTH
+      - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        Fn::If:
+        - HasGoogleOAuth
+        - - COGNITO
+          - Google
+        - - COGNITO
+      CallbackURLs:
+      - Fn::Sub: ${FrontendUrl}/auth/callback
+      - http://localhost:3000/auth/callback
+      LogoutURLs:
+      - Fn::Sub: ${FrontendUrl}
+      - http://localhost:3000
+      AllowedOAuthFlows:
+      - code
+      - implicit
+      AllowedOAuthScopes:
+      - email
+      - openid
+      - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+  ResearchPaperApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name:
+        Fn::Sub: research-paper-api-${Environment}
+      StageName:
+        Ref: Environment
+      Description: Research Paper RAG System API
+      EndpointConfiguration:
+        Type: REGIONAL
+      Cors:
+        AllowMethods: '''GET,POST,PUT,DELETE,OPTIONS'''
+        AllowHeaders: '''Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'''
+        AllowOrigin: '''*'''
+        MaxAge: '''600'''
+      BinaryMediaTypes:
+      - application/pdf
+      - multipart/form-data
+      AccessLogSetting:
+        DestinationArn:
+          Fn::GetAtt:
+          - ApiAccessLogGroup
+          - Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+      MethodSettings:
+      - ResourcePath: /*
+        HttpMethod: '*'
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+        LoggingLevel: INFO
+        DataTraceEnabled: true
+        MetricsEnabled: true
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/apigateway/research-paper-api-${Environment}
+      RetentionInDays: 30
+  PaperUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: paper-upload-dev
+      Description: Handles PDF upload, validation, S3 storage, SQS enqueue, and external
+        paper import
+      CodeUri: PaperUploadFunction
+      Handler: handler.handler
+      Timeout: 60
+      MemorySize: 512
+      Role:
+        Ref: PaperUploadRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        UploadPaper:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers
+            Method: POST
+        ImportPaper:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers/import
+            Method: POST
+        ListPapers:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers
+            Method: GET
+        GetPaper:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers/{document_id}
+            Method: GET
+        GetPaperInsights:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers/{document_id}/insights
+            Method: GET
+        DeletePaper:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /papers/{document_id}
+            Method: DELETE
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: PaperUploadFunction
+  PaperProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: paper-processor-dev
+      Description: Processes PDFs - extracts text, chunks, generates embeddings, indexes
+        to OpenSearch
+      CodeUri: PaperProcessorFunction
+      Handler: handler.handler
+      Timeout: 900
+      MemorySize: 1024
+      Role:
+        Ref: PaperProcessorRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - PaperProcessingQueue
+              - Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+            - ReportBatchItemFailures
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: PaperProcessorFunction
+  ChatHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: chat-handler-dev
+      Description: RAG pipeline - retrieves chunks and generates LLM responses
+      CodeUri: ChatHandlerFunction
+      Handler: handler.handler
+      Timeout: 60
+      MemorySize: 512
+      Role:
+        Ref: ChatHandlerRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        Chat:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /chat
+            Method: POST
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: ChatHandlerFunction
+  SessionManagerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: session-manager-dev
+      Description: CRUD operations for study sessions
+      CodeUri: SessionManagerFunction
+      Handler: handler.handler
+      Timeout: 30
+      MemorySize: 256
+      Role:
+        Ref: SessionManagerRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        CreateSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions
+            Method: POST
+        ListSessions:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions
+            Method: GET
+        GetSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions/{session_id}
+            Method: GET
+        UpdateSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions/{session_id}
+            Method: PUT
+        DeleteSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions/{session_id}
+            Method: DELETE
+        AddPaperToSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions/{session_id}/papers
+            Method: POST
+        RemovePaperFromSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /sessions/{session_id}/papers/{document_id}
+            Method: DELETE
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: SessionManagerFunction
+  SearchHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: search-handler-dev
+      Description: Unified search across Semantic Scholar, arXiv, and user library
+      CodeUri: SearchHandlerFunction
+      Handler: handler.handler
+      Timeout: 30
+      MemorySize: 256
+      Role:
+        Ref: SearchHandlerRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        Search:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /search
+            Method: GET
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: SearchHandlerFunction
+  TTSHandlerFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasTTSRole
+    Properties:
+      FunctionName: tts-handler-dev
+      Description: Text-to-speech synthesis using Amazon Polly
+      CodeUri: TTSHandlerFunction
+      Handler: handler.handler
+      Timeout: 30
+      MemorySize: 256
+      Role:
+        Ref: TTSHandlerRoleArn
+      Layers:
+      - Ref: SharedLayerArn
+      Events:
+        SynthesizePaper:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /tts/paper/{document_id}
+            Method: POST
+        SynthesizeText:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /tts/text
+            Method: POST
+        GetVoices:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ResearchPaperApi
+            Path: /tts/voices
+            Method: GET
+      Tags:
+        Project: ResearchPaperRAG
+        Environment:
+          Ref: Environment
+    Metadata:
+      SamResourceId: TTSHandlerFunction
+  DLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: paper-processing-dlq-alarm-${Environment}
+      AlarmDescription: Alert when messages are sent to the DLQ
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+      - Name: QueueName
+        Value:
+          Fn::If:
+          - HasExistingDLQ
+          - Fn::Select:
+            - 5
+            - Fn::Split:
+              - ':'
+              - Ref: ExistingDLQArn
+          - Fn::GetAtt:
+            - PaperProcessingDLQ
+            - QueueName
+      TreatMissingData: notBreaching
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: lambda-errors-alarm-${Environment}
+      AlarmDescription: Alert on Lambda function errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+      - Name: FunctionName
+        Value:
+          Ref: PaperProcessorFunction
+      TreatMissingData: notBreaching
+Outputs:
+  PapersBucketName:
+    Description: S3 bucket for paper storage
+    Value:
+      Ref: PapersBucket
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PapersBucket
+  PapersBucketArn:
+    Description: S3 bucket ARN
+    Value:
+      Fn::GetAtt:
+      - PapersBucket
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PapersBucketArn
+  ProcessingQueueUrl:
+    Description: SQS queue URL for paper processing
+    Value:
+      Ref: PaperProcessingQueue
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ProcessingQueueUrl
+  ProcessingQueueArn:
+    Description: SQS queue ARN
+    Value:
+      Fn::GetAtt:
+      - PaperProcessingQueue
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ProcessingQueueArn
+  PapersMetadataTableName:
+    Description: DynamoDB table for paper metadata
+    Value:
+      Ref: PapersMetadataTable
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PapersTable
+  StudySessionsTableName:
+    Description: DynamoDB table for study sessions
+    Value:
+      Ref: StudySessionsTable
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SessionsTable
+  ChatHistoryTableName:
+    Description: DynamoDB table for chat history
+    Value:
+      Ref: ChatHistoryTable
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ChatHistoryTable
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value:
+      Fn::Sub: https://${ResearchPaperApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ApiEndpoint
+  ApiId:
+    Description: API Gateway ID
+    Value:
+      Ref: ResearchPaperApi
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ApiId
+  PaperUploadFunctionArn:
+    Description: Paper Upload Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - PaperUploadFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PaperUploadArn
+  PaperProcessorFunctionArn:
+    Description: Paper Processor Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - PaperProcessorFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PaperProcessorArn
+  ChatHandlerFunctionArn:
+    Description: Chat Handler Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - ChatHandlerFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ChatHandlerArn
+  SessionManagerFunctionArn:
+    Description: Session Manager Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - SessionManagerFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SessionManagerArn
+  SearchHandlerFunctionArn:
+    Description: Search Handler Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - SearchHandlerFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SearchHandlerArn
+  TTSHandlerFunctionArn:
+    Condition: HasTTSRole
+    Description: TTS Handler Lambda ARN
+    Value:
+      Fn::GetAtt:
+      - TTSHandlerFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TTSHandlerArn
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value:
+      Ref: UserPool
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolId
+  CognitoUserPoolArn:
+    Description: Cognito User Pool ARN
+    Value:
+      Fn::GetAtt:
+      - UserPool
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolArn
+  CognitoUserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value:
+      Ref: UserPoolClient
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolClientId
+  CognitoDomain:
+    Description: Cognito Hosted UI Domain
+    Value:
+      Fn::Sub: https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-CognitoDomain

@@ -1,0 +1,41 @@
+{
+  "Parameters": {
+    "Environment": "dev",
+    
+    "ExistingDLQArn": "",
+    "OpenSearchEndpoint": "",
+    "OpenSearchCrossAccountRole": "",
+    
+    "PaperUploadRoleArn": "",
+    "PaperProcessorRoleArn": "",
+    "ChatHandlerRoleArn": "",
+    "SessionManagerRoleArn": "",
+    "SearchHandlerRoleArn": "",
+    
+    "SharedLayerArn": "",
+    
+    "OpenAIApiKey": "",
+    "GeminiApiKey": "",
+    "SemanticScholarApiKey": "",
+    
+    "CognitoUserPoolArn": ""
+  },
+  
+  "_instructions": {
+    "description": "Copy this file to parameters-dev.json and fill in your values",
+    "ExistingDLQArn": "ARN of your existing Dead Letter Queue (leave empty to create new)",
+    "OpenSearchEndpoint": "Your OpenSearch Serverless endpoint URL",
+    "PaperUploadRoleArn": "From IAM console: arn:aws:iam::ACCOUNT:role/paper-upload-role-xxx",
+    "SharedLayerArn": "From Lambda console: arn:aws:lambda:REGION:ACCOUNT:layer:NAME:VERSION",
+    "CognitoUserPoolArn": "From Cognito console (leave empty for no auth)"
+  },
+  
+  "_role_arns_from_screenshot": {
+    "chat-handler-role-4x0dnuw6": "Get full ARN from IAM console",
+    "paper-processor-role-yhqypkpm": "Get full ARN from IAM console",
+    "paper-upload-role-z5cpkd1f": "Get full ARN from IAM console",
+    "search-handler-role-pkxpah56": "Get full ARN from IAM console",
+    "session-manager-role-nt88awat": "Get full ARN from IAM console"
+  }
+}
+

@@ -1,21 +1,56 @@
-# Environment
+# Dependencies
+node_modules/
+frontend-1/node_modules/
+
+# Next.js
+frontend-1/.next/
+frontend-1/out/
+
+# Lambda layers (too large)
+lambda-layer/
+bedrock-layer-v34/
+polly-layer/
+polly-full-layer/
+lambda-layer-recovered/
+*.zip
+
+# Environment files
 .env
-venv/
-*.log
+.env.local
+.env*.local
+frontend-1/.env.local
 
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+.Python
 
-# Node / Next.js frontend
-frontend/node_modules/
-frontend/.next/
-frontend/.turbo/
-frontend/.vercel/
-frontend/.env.local
+# IDE
+.vscode/
+.idea/
 
-# Editor / OS
+# OS
 .DS_Store
 Thumbs.db
 
+# Amplify
+frontend-1/amplify/
+amplify/
 
+# Old/backup files
+*.backup
+CC/
+frontend/
+frontend (2)/
+
+# Logs
+*.log
+infrastructure/logs.txt
+
+# Test files
+test-event.json
+test_api.py
+check_models.py
+
+infrastructure/samconfig.toml 

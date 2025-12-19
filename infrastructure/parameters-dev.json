@@ -1,0 +1,28 @@
+{
+  "Parameters": {
+    "Environment": "dev",
+    
+    "ExistingDLQArn": "",
+    "OpenSearchEndpoint": "",
+    "OpenSearchCrossAccountRole": "",
+    
+    "PaperUploadRoleArn": "",
+    "PaperProcessorRoleArn": "",
+    "ChatHandlerRoleArn": "",
+    "SessionManagerRoleArn": "",
+    "SearchHandlerRoleArn": "",
+    
+    "SharedLayerArn": "",
+    
+    "OpenAIApiKey": "",
+    "GeminiApiKey": "AIzaSyDbovMhXAxJ_Y38XvS-A-ops26Egq451SU",
+    "SemanticScholarApiKey": "uRDljdDyu48sjYRAa6y4g1VTTpZXuyYm3g8UDOHV",
+    
+    "CognitoUserPoolArn": "",
+    
+    "PineconeApiKey": "",
+    "PineconeIndexName": "research-papers",
+    "PineconeHost": ""
+  }
+}
+
